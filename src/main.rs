@@ -931,7 +931,21 @@ fn main() {
                                 let mut oargs = arc.flags.ld.clone();
                                 //let pbuf = PathBuf::from(out_obj_path.clone());
                                 //let obuf = pbuf.with_extension("exe").to_str().unwrap().to_owned();
-                                
+                                if let Some(build_files) = build.vars.get("build") {
+                                    com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
+                                    let vals = build_files.typ.unwrap_array();
+                                    let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
+                                    com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
+                                    for val in vals.iter() {
+                                        com_assert!(build_files, val.is_string(), "Error: All elements of build must be strings!");
+                                        let val = val.unwrap_string();
+                                        let v_ = PathBuf::from(val);
+                                        let val = v_.file_stem().unwrap();
+                                        let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
+                                        let int_rep_str = int_rep.to_str().unwrap_or_default();
+                                        oargs.push(intpath.typ.unwrap_string().clone()+"\\"+int_rep_str);
+                                    }
+                                }
                                 oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
                                 update_progress!("   {}Running gcc {}{}",oargs.join(" "),LIGHT_BLUE,RESET);
                                 let cmd = Command::new("ld").args(oargs).spawn();
