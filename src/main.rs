@@ -766,7 +766,19 @@ struct LHArchitecture {
     obj_extension: String,
     exe_extension: String
 }
-
+enum PackageType {
+    BIN,
+    LIB
+}
+fn usage(program: String){
+    println!("{} (command) [flags]",program);
+    println!("   init                  // Initializes an new project");
+    println!("      --type [bin|lib]   // Sets the type of project - library or program");
+    println!("      --name [name]      // Sets the name of the project");
+    println!("   build                 // Builds the assembly with sopl");
+    println!("   run                   // runs the current project");
+    println!("   verify                // verify everything is correct with the current project");
+} 
 fn main() {
     let mut Architectures: HashMap<String, LHArchitecture> = HashMap::new();
     
@@ -779,9 +791,18 @@ fn main() {
     Architectures.insert("win_x86".to_owned(), Architectures.get("windows_x86").unwrap().clone());
     let mut args: Vec<_> = env::args().collect();
     
-    let _program = remove_arg_if(&mut args).expect("Error: expected program but found nothing");
-    let command = remove_arg_if(&mut args).expect("Error: expected command but found nothing");
+    let program = remove_arg_if(&mut args).expect("Error: expected program but found nothing");
+    let command = remove_arg_if(&mut args);
+    if command.is_none() {
+        usage(program);
+        exit(1)
+    }
+    let command = command.unwrap();
     match command.as_str() {
+        "help" => {
+            usage(program);
+            exit(0)
+        }
         "verify" => {
             update_progress!("   {}Verifying package{}",LIGHT_BLUE,RESET);
             let cdir = current_dir().unwrap_or_default();
@@ -1019,14 +1040,57 @@ fn main() {
             let cdir = current_dir().unwrap_or_default();
             let cdirstr = cdir.to_str().unwrap_or_default().to_owned();
             let cdirname = cdir.file_name().unwrap_or(OsStr::new("SOPL")).to_str().unwrap_or_default().to_owned();
-            let package_name = 
-            if let Some(name) = remove_arg_if(&mut args) {
-                name
+            
+            struct InitOptions {
+                package_name: String,
+                package_type: PackageType,
             }
-            else {
-                cdirname.clone()
-            };
+            impl InitOptions {
+                fn new() -> Self {
+                    Self { package_name: String::new(), package_type: PackageType::BIN }
+                }
+            }
+            let mut options = InitOptions::new();
+            options.package_name = cdirname.clone();
+            {
+                let mut i: usize = 0;
+                while i < args.len() {
+                    match args[i].as_str() {
+                        "--name" => {
+                            i+=1;
+                            options.package_name = args[i].clone()
+                        }
+                        "--type" => {
+                            i+=1;
+                            options.package_type = match args[i].as_str() {
+                                "bin" => {
+                                    PackageType::BIN
+                                }
+                                "lib" => {
+                                    PackageType::LIB
+                                }
+                                _ => panic!("Unknown package type {}",args[i])
+                            }
+                        }
+                        _ => panic!("Unknown flag {}",args[i])
+                    }
+                    i += 1;
 
+                }
+            }
+            // let package_name = if let Some(name) = remove_arg_if(&mut args) {
+            //     if name == "bin" || name == "lib" {
+            //         cdirname.clone()
+            //     }
+            //     else {
+            //         name
+            //     }
+            // }
+            // else {
+            //     cdirname.clone()
+            // };
+
+            
             if !can_create_package(cdirstr.clone()) {
                 update_progress!("    {}Error: cannot reinitialize a package! Package already exists{}\n",RED,RESET);
                 exit(1)
@@ -1045,12 +1109,15 @@ fn main() {
                 exit(1);
             }
             let mut cfg_f = res.unwrap();
-            writeln!(&mut cfg_f, "## TODO: Make the default cfg").unwrap();
-            writeln!(&mut cfg_f, "name=\"{}\"",package_name).unwrap();
+            writeln!(&mut cfg_f, "## Config supports comments :D").unwrap();
+            writeln!(&mut cfg_f, "name=\"{}\"",options.package_name).unwrap();
             writeln!(&mut cfg_f, "intpath=\"{}\"",cdirstr.clone()+"\\output\\int").unwrap();
             writeln!(&mut cfg_f, "binpath=\"{}\"",cdirstr.clone()+"\\output\\bin").unwrap();
-            writeln!(&mut cfg_f, "entry=\"{}\"",cdirstr.clone()+"\\src\\main.spl").unwrap();
-            
+            match options.package_type {
+                PackageType::BIN => writeln!(&mut cfg_f, "entry=\"{}\"",cdirstr.clone()+"\\src\\main.spl").unwrap(),
+                PackageType::LIB => {},
+                _ => {}
+            }
             update_progress!("   {}Working on .gitignore file{}",LIGHT_BLUE,RESET);
             {
                 let gitpath = PathBuf::from(cdirstr.clone()+"\\.gitignore");
@@ -1073,17 +1140,35 @@ fn main() {
                 writeln!(&mut res, "/output/").unwrap();
             }
             
-            update_progress!("   {}Creating src\\main.spl file{}",LIGHT_BLUE,RESET);
-            let res = File::create(cdirstr.clone()+"\\src\\main.spl");
-            if res.is_err() {
-                update_progress!("   {}Could not create main.spl file{}",RED,RESET);
-                exit(1);
+            
+            match options.package_type {
+            PackageType::BIN => {
+                update_progress!("   {}Creating src\\main.spl file{}",LIGHT_BLUE,RESET);
+                let res = File::create(cdirstr.clone()+"\\src\\main.spl");
+                if res.is_err() {
+                    update_progress!("   {}Could not create main.spl file{}",RED,RESET);
+                    exit(1);
+                }
+                let mut mainspl_f = res.unwrap();
+                writeln!(&mut mainspl_f, "extern \"C\" puts(*char);").unwrap();
+                writeln!(&mut mainspl_f, "func main(){{").unwrap();
+                writeln!(&mut mainspl_f, "   puts(\"Hello World!\")").unwrap();
+                writeln!(&mut mainspl_f, "}}").unwrap();
             }
-            let mut mainspl_f = res.unwrap();
-            writeln!(&mut mainspl_f, "extern \"C\" puts(*char);").unwrap();
-            writeln!(&mut mainspl_f, "func main(){{").unwrap();
-            writeln!(&mut mainspl_f, "   puts(\"Hello World!\")").unwrap();
-            writeln!(&mut mainspl_f, "}}").unwrap();
+            PackageType::LIB => {
+                update_progress!("   {}Creating src\\lib.spl file{}",LIGHT_BLUE,RESET);
+                let res = File::create(cdirstr.clone()+"\\src\\lib.spl");
+                if res.is_err() {
+                    update_progress!("   {}Could not create lib.spl file{}",RED,RESET);
+                    exit(1);
+                }
+                let mut mainspl_f = res.unwrap();
+                writeln!(&mut mainspl_f, "extern \"C\" puts(*char);").unwrap();
+                writeln!(&mut mainspl_f, "func my_awesome_func(){{").unwrap();
+                writeln!(&mut mainspl_f, "   puts(\"Hello World!\")").unwrap();
+                writeln!(&mut mainspl_f, "}}").unwrap();
+            }
+            }
             update_progress!("   {}Creating output folder{}",LIGHT_BLUE,RESET);
             let res = create_dir(cdirstr.clone()+"\\output");
             if res.is_err() {
@@ -1103,8 +1188,8 @@ fn main() {
                 exit(1);
             }
              
-            update_progress!("   {}Initializing package{} \"{}\"",LIGHT_BLUE,RESET,package_name);
-            update_progress!("   {}Finished{} Initialized package \"{}\"",GREEN,RESET,package_name);
+            update_progress!("   {}Initializing package{} \"{}\"",LIGHT_BLUE,RESET,options.package_name);
+            update_progress!("   {}Finished{} Initialized package \"{}\"",GREEN,RESET,options.package_name);
         }
         _ => panic!("Unknown command: \"{}\"",command)
     }
