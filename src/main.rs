@@ -688,7 +688,14 @@ fn build_package() -> CfgBuild {
         
         oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
         if arch.is_some() {
-            oargs.extend(vec!["-arc".to_owned(),arch.unwrap().clone()])
+            if arch.unwrap() == "custom" {
+                let arch_path = com_expect!(lexer,build.vars.get("arch_path"),"Error: Expect arch_path with custom but found nothing!");
+                com_assert!(arch_path,arch_path.typ.is_string(), "Errror: Expected string for arch_path but found something else!");
+                oargs.extend(vec!["-arc".to_owned(),"-".to_owned(),arch_path.typ.unwrap_string().clone()])
+            }
+            else {
+                oargs.extend(vec!["-arc".to_owned(),arch.unwrap().clone()])
+            }
         }
         update_progress!("   {}Running sopl {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
         let cmd = Command::new("sopl").args(oargs).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
@@ -732,7 +739,14 @@ fn build_package() -> CfgBuild {
                 let int_rep_str = int_rep.to_str().unwrap_or_default();
                 oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
                 if arch.is_some() {
-                    oargs.extend(vec!["-arc".to_owned(),arch.unwrap().clone()])
+                    if arch.unwrap() == "custom" {
+                        let arch_path = com_expect!(lexer,build.vars.get("arch_path"),"Error: Expect arch_path with custom but found nothing!");
+                        com_assert!(arch_path,arch_path.typ.is_string(), "Errror: Expected string for arch_path but found something else!");
+                        oargs.extend(vec!["-arc".to_owned(),"-".to_owned(),arch_path.typ.unwrap_string().clone()])
+                    }
+                    else {
+                        oargs.extend(vec!["-arc".to_owned(),arch.unwrap().clone()])
+                    }
                 }
                 update_progress!("   {}Running sopl {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
                 let cmd = Command::new("sopl").args(oargs).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
@@ -852,6 +866,10 @@ fn main() {
                     } else {
                         "".to_owned()+env::consts::OS+"_"+env::consts::ARCH
                     };
+                    if oarch == "custom" {
+                        // TODO: 
+                        panic!("Not yet implented! Cannot do custom architectures yet!");
+                    }
                     
                     if let Some(arc) = Architectures.get(&oarch) {
                         let out_obj_path = intpath.clone()+"\\main."+&arc.obj_extension;
