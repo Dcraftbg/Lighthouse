@@ -947,7 +947,7 @@ fn main() {
                                     }
                                 }
                                 oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
-                                update_progress!("   {}Running gcc {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                                update_progress!("   {}Running ld {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
                                 let cmd = Command::new("ld").args(oargs).spawn();
                                 if cmd.is_err() {
                                     update_progress!("   {}Error: could not run ld command{}\n",RED,RESET);
@@ -973,7 +973,7 @@ fn main() {
                                 exit(1)
                             }
                         }
-                        
+                        update_progress!("   {}Finished{} Compiled program sucessfully",GREEN,RESET);
                         {
                             let cmd = Command::new(obuf).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
                             println!();
