@@ -658,6 +658,11 @@ fn build_package() -> CfgBuild {
     let build = parse_tokens_to_build(&mut lexer);
     update_progress!("   {}Parsed lighthouse.cfg successfully{}",GREEN,RESET);
     {
+        let arch = if let Some(arch) = build.vars.get("arch") {
+            com_assert!(arch, arch.typ.is_string(), "Error: Expected arch to be string but found other");
+            Some(arch.typ.unwrap_string())
+        } else { None };
+
         let mut oargs: Vec<String> = Vec::new();
         if let Some(otarget) = build.vars.get("target") {
             com_assert!(otarget.loc,otarget.typ.is_string(),"Error: Expected string but found other");
@@ -682,6 +687,9 @@ fn build_package() -> CfgBuild {
         com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
         
         oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
+        if arch.is_some() {
+            oargs.extend(vec!["-arc".to_owned(),arch.unwrap().clone()])
+        }
         update_progress!("   {}Running sopl {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
         let cmd = Command::new("sopl").args(oargs).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
         
@@ -723,6 +731,9 @@ fn build_package() -> CfgBuild {
                 let int_rep = PathBuf::from(val).with_extension("asm");
                 let int_rep_str = int_rep.to_str().unwrap_or_default();
                 oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
+                if arch.is_some() {
+                    oargs.extend(vec!["-arc".to_owned(),arch.unwrap().clone()])
+                }
                 update_progress!("   {}Running sopl {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
                 let cmd = Command::new("sopl").args(oargs).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
                 if cmd.is_err() {
@@ -835,7 +846,14 @@ fn main() {
                     let binpath = build.vars.get("binpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
                     com_assert!(binpath, binpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
                     let binpath = binpath.typ.unwrap_string();
-                    if let Some(arc) = Architectures.get(&("".to_owned()+env::consts::OS+"_"+env::consts::ARCH)) {
+                    let oarch = if let Some(architecture) = build.vars.get("arch") {
+                        com_assert!(architecture,architecture.typ.is_string(), "Error: Expected string but found something else!");
+                        architecture.typ.unwrap_string().to_owned()
+                    } else {
+                        "".to_owned()+env::consts::OS+"_"+env::consts::ARCH
+                    };
+                    
+                    if let Some(arc) = Architectures.get(&oarch) {
                         let out_obj_path = intpath.clone()+"\\main."+&arc.obj_extension;
                         {
                             if let Some(build_files) = build.vars.get("build") {
