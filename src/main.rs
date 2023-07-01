@@ -744,6 +744,7 @@ fn main() {
         }
         "run" => {
             let build = build_package();
+            
             let target_typ = if let Some(otarget) = build.vars.get("target") {
                 com_assert!(otarget.loc,otarget.typ.is_string(),"Error: Expected string but found other");
                 otarget.typ.unwrap_string().clone()
@@ -785,34 +786,47 @@ fn main() {
                             }
                         }
                         let obuf = binpath.clone()+"\\main."+&arc.exe_extension;
-                        {
-                            
-                            let mut oargs = arc.flags.gcc.clone();
-                            //let pbuf = PathBuf::from(out_obj_path.clone());
-                            //let obuf = pbuf.with_extension("exe").to_str().unwrap().to_owned();
-                            
-                            oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
-                            update_progress!("   {}Running gcc {}{}",oargs.join(" "),LIGHT_BLUE,RESET);
-                            let cmd = Command::new("gcc").args(oargs).spawn();
-                            if cmd.is_err() {
-                                update_progress!("   {}Error: could not run gcc command{}\n",RED,RESET);
-                                exit(1);
+                        let linker = build.vars.get("linker");
+                        let linker = if let Some(linker) = linker {
+                            com_assert!(linker, linker.typ.is_string(), "Error: Expected linker type to be a string but found other!");
+                            linker.typ.unwrap_string().clone()
+                        } else {
+                            "gcc".to_owned()
+                        };
+                        match linker.as_str() {
+                            "gcc" => {
+                                let mut oargs = arc.flags.gcc.clone();
+                                //let pbuf = PathBuf::from(out_obj_path.clone());
+                                //let obuf = pbuf.with_extension("exe").to_str().unwrap().to_owned();
+                                
+                                oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
+                                update_progress!("   {}Running gcc {}{}",oargs.join(" "),LIGHT_BLUE,RESET);
+                                let cmd = Command::new("gcc").args(oargs).spawn();
+                                if cmd.is_err() {
+                                    update_progress!("   {}Error: could not run gcc command{}\n",RED,RESET);
+                                    exit(1);
+                                }
+                                let mut cmd = cmd.unwrap();
+                                let status = cmd.wait();
+                                if status.is_err() {
+                                    update_progress!("   {}Error: could not recieve any information from gcc command{}\n",RED,RESET);
+                                    exit(1);
+                                }
+                                let ostatus = status.unwrap().code().unwrap_or(1);
+                                if ostatus == 0 {
+                                    update_progress!("   {}Finished{} built code with gcc successfully",GREEN,RESET);
+                                }
+                                else {
+                                    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED,RESET,ostatus);
+                                    exit(ostatus)
+                                }
                             }
-                            let mut cmd = cmd.unwrap();
-                            let status = cmd.wait();
-                            if status.is_err() {
-                                update_progress!("   {}Error: could not recieve any information from gcc command{}\n",RED,RESET);
-                                exit(1);
-                            }
-                            let ostatus = status.unwrap().code().unwrap_or(1);
-                            if ostatus == 0 {
-                                update_progress!("   {}Finished{} built code with gcc successfully",GREEN,RESET);
-                            }
-                            else {
-                                update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED,RESET,ostatus);
-                                exit(ostatus)
+                            _ => {
+                                update_progress!("   {}Failed Lighthouse does not support linker '{}'{}\n",RED,linker,RESET);
+                                exit(1)
                             }
                         }
+                        
                         {
                             let cmd = Command::new(obuf).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
                             println!();
