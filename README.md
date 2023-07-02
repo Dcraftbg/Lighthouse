@@ -17,7 +17,7 @@ cargo build --release
 
 To initalize a basic project use:
 ```
-lighthouse init (Name => defaults to current directory name)
+lighthouse init 
 ```
 Then to run your project simply do:
 ```
@@ -26,6 +26,16 @@ lighthouse run
 To verify that everything is correct you can use:
 ```
 lighthouse verify
+```
+## Flags
+```
+lighthouse (command) [flags]
+   init                  // Initializes an new project
+      --type [bin|lib]   // Sets the type of project - library or program
+      --name [name]      // Sets the name of the project
+   build                 // Builds the assembly with sopl
+   run                   // runs the current project
+   verify                // verify everything is correct with the current project
 ```
 ## Customization
 You can customize where you want to put things in your project by editing the lighthouse.cfg file
@@ -40,6 +50,9 @@ entry="{PATH TO CURRENT FOLDER}\src\main.spl"
 Some things you may want to change:
 ```cfg
 target="nasm_x86_64"  ## You can change the target (Check sopl documentation for currently supported targets)
+build=[]              ## You can build certain parts of your project to then be linked together with the linker
+arch="linux_x86_64"   ## You can also make it "custom" which would require you to also have arch_path as a variable that points to the json file (in the same folder you have to also have a cfg file with the same name as the json - checkout examples/arcs in SOPL repository)
+linker="gcc"          ## Specify which linker to use
 ```
 ## What does it do?
 It makes it easier to manage your sopl code. SOPL is supposed to be the core part of the manager, with its purpose being - easier testing, running, etc.

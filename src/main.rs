@@ -1299,3 +1299,10 @@ fn main() {
     }
     
 }
+
+
+
+/*
+local_dependencies=["../../stdlib"]            // you would pass the -i flag with this array and it will make it easier to include (you can just do include "stdlib.spl")
+                                               // it also builds the package and if it has anything under "build" it also links with it
+*/
