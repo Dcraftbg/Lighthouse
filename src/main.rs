@@ -700,6 +700,32 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
                 oargs.extend(vec!["-arc".to_owned(),arch.unwrap().clone()])
             }
         }
+        let get_var = "local_dependencies";
+        let mut olinkpaths: Vec<String> = Vec::new();
+        if let Some(obj_var) = build.vars.get(get_var) {
+            com_assert!(obj_var,obj_var.typ.is_array(), "Error: expected {get_var} to be an array but found nothing!");
+            let obj_var_ar = obj_var.typ.unwrap_array();
+            olinkpaths = Vec::with_capacity(obj_var_ar.len());
+            
+            for obj in obj_var_ar {
+                com_assert!(obj_var, obj.is_string(), "Error: Cannot have flags to {get_var} which are not strings");
+                olinkpaths.push(obj.unwrap_string().clone())
+            }
+        }
+        if olinkpaths.len() > 0 {
+            oargs.push("-i".to_owned());
+            let mut i: usize = 0;
+            while i < olinkpaths.len() {
+                if i == olinkpaths.len()-1 {
+                    oargs.push(olinkpaths[i].clone())
+                }
+                else {
+                    oargs.push(olinkpaths[i].clone()+",")
+                }
+                i+=1;
+            }
+        }
+
         update_progress!("   {}Running sopl {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
         let cmd = Command::new("sopl").args(oargs).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
         
@@ -725,7 +751,7 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
             update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED,RESET,ostatus);
             exit(ostatus)
         }
-
+        
         if let Some(build_files) = build.vars.get("build") {
             com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
             let vals = build_files.typ.unwrap_array();
@@ -749,6 +775,19 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
                     }
                     else {
                         oargs.extend(vec!["-arc".to_owned(),arch.unwrap().clone()])
+                    }
+                }
+                if olinkpaths.len() > 0 {
+                    oargs.push("-i".to_owned());
+                    let mut i: usize = 0;
+                    while i < olinkpaths.len() {
+                        if i == olinkpaths.len()-1 {
+                            oargs.push(olinkpaths[i].clone())
+                        }
+                        else {
+                            oargs.push(olinkpaths[i].clone()+",")
+                        }
+                        i+=1;
                     }
                 }
                 update_progress!("   {}Running sopl {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
@@ -868,6 +907,7 @@ fn main() {
                     com_error!(ptyp, "Error: Unknown project typ: {}",ptyp_str);
                 }
             }
+            
             let target_typ = if let Some(otarget) = build.vars.get("target") {
                 com_assert!(otarget.loc,otarget.typ.is_string(),"Error: Expected string but found other");
                 otarget.typ.unwrap_string().clone()
