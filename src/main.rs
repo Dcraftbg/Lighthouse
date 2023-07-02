@@ -637,9 +637,8 @@ fn parse_tokens_to_build(lexer: &mut CfgLexer) -> CfgBuild {
     }
     build
 }
-fn build_package() -> CfgBuild {
-    update_progress!("   {}Verifying package{}",LIGHT_BLUE,RESET);
-    let cdir = current_dir().unwrap_or_default();
+fn build_package(cdir: PathBuf) -> CfgBuild {
+    update_progress!("   {}Verifying package{}",LIGHT_BLUE,RESET);    
     let cdirstr = cdir.to_str().unwrap_or_default().to_owned();
     let res = verify_package_exists(cdirstr);
     if res.is_err() {
@@ -813,6 +812,261 @@ fn usage(program: String){
     println!("   run                   // runs the current project");
     println!("   verify                // verify everything is correct with the current project");
 } 
+fn compile_package(build: &CfgBuild, Architectures: &HashMap<String, LHArchitecture>) -> String {
+    let target_typ = if let Some(otarget) = build.vars.get("target") {
+        com_assert!(otarget.loc,otarget.typ.is_string(),"Error: Expected string but found other");
+        otarget.typ.unwrap_string().clone()
+    } else {
+        "nasm_x86_64".to_owned()
+    };
+    match target_typ.as_str() {
+        "nasm_x86_64" => {
+            let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
+            com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
+            let intpath = intpath.typ.unwrap_string();
+            let binpath = build.vars.get("binpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
+            com_assert!(binpath, binpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
+            let binpath = binpath.typ.unwrap_string();
+            let oarch = if let Some(architecture) = build.vars.get("arch") {
+                com_assert!(architecture,architecture.typ.is_string(), "Error: Expected string but found something else!");
+                architecture.typ.unwrap_string().to_owned()
+            } else {
+                "".to_owned()+env::consts::OS+"_"+env::consts::ARCH
+            };
+            let arc = if oarch == "custom" {
+                let arch_path = build.vars.get("arch_path").expect("Cannot have arch=\"custom\" without arch_path");
+                com_assert!(arch_path,arch_path.typ.is_string(), "Error: Expected string but found other!");
+                let arch_path_buf = PathBuf::from(arch_path.typ.unwrap_string()).with_extension("cfg");
+                com_assert!(arch_path,arch_path_buf.exists(), "Error: Expected \"{}\" to exist however it doesn't!",arch_path_buf.to_string_lossy());
+                let data = fs::read_to_string(arch_path_buf.clone());
+                if data.is_err() {
+                    update_progress!("   {}Failed{} Could not read arch config for \"{}\"\nReason: {}",RED,RESET,arch_path_buf.to_string_lossy(),data.unwrap_err().to_string());
+                    exit(1);
+                }
+                let data = data.unwrap();
+                let mut lexer = CfgLexer::new(data);
+                lexer.loc.file = Rc::new(arch_path_buf.to_str().unwrap().to_owned());
+                let build = parse_tokens_to_build(&mut lexer);
+                let mut outarch = LHArchitecture::new();
+                
+                let obj_var = com_expect!(lexer, build.vars.get("obj_extension"), "Error: Expected obj_extension for architecture build but found nothing!");
+                com_assert!(obj_var,obj_var.typ.is_string(), "Error: expected obj_extension to be string but found nothing!");
+                outarch.obj_extension = obj_var.typ.unwrap_string().clone();
+                let obj_var = com_expect!(lexer, build.vars.get("exe_extension"), "Error: Expected exe_extension for architecture build but found nothing!");
+                com_assert!(obj_var,obj_var.typ.is_string(), "Error: expected exe_extension to be string but found nothing!");
+                outarch.exe_extension = obj_var.typ.unwrap_string().clone();
+
+
+
+                let get_var = "flags_nasm";
+                let obj_var = com_expect!(lexer, build.vars.get(get_var), "Error: Expected {get_var} for architecture build but found nothing!");
+                com_assert!(obj_var,obj_var.typ.is_array(), "Error: expected {get_var} to be an array but found nothing!");
+                let obj_var_ar = obj_var.typ.unwrap_array();
+                let mut obody: Vec<String> = Vec::with_capacity(obj_var_ar.len());
+                for obj in obj_var_ar {
+                    com_assert!(obj_var, obj.is_string(), "Error: Cannot have flags to {get_var} which are not strings");
+                    obody.push(obj.unwrap_string().clone())
+                }
+                outarch.flags.nasm = obody;
+
+                let get_var = "flags_gcc";
+                let obj_var = com_expect!(lexer, build.vars.get(get_var), "Error: Expected {get_var} for architecture build but found nothing!");
+                com_assert!(obj_var,obj_var.typ.is_array(), "Error: expected {get_var} to be an array but found nothing!");
+                let obj_var_ar = obj_var.typ.unwrap_array();
+                let mut obody: Vec<String> = Vec::with_capacity(obj_var_ar.len());
+                for obj in obj_var_ar {
+                    com_assert!(obj_var, obj.is_string(), "Error: Cannot have flags to {get_var} which are not strings");
+                    obody.push(obj.unwrap_string().clone())
+                }
+                outarch.flags.gcc = obody;
+
+                let get_var = "flags_ld";
+                let obj_var = com_expect!(lexer, build.vars.get(get_var), "Error: Expected {get_var} for architecture build but found nothing!");
+                com_assert!(obj_var,obj_var.typ.is_array(), "Error: expected {get_var} to be an array but found nothing!");
+                let obj_var_ar = obj_var.typ.unwrap_array();
+                let mut obody: Vec<String> = Vec::with_capacity(obj_var_ar.len());
+                for obj in obj_var_ar {
+                    com_assert!(obj_var, obj.is_string(), "Error: Cannot have flags to {get_var} which are not strings");
+                    obody.push(obj.unwrap_string().clone())
+                }
+                outarch.flags.ld = obody;
+                //outarch.obj_extension = obj_var.typ.unwrap_string().clone();
+                
+                outarch
+            } else {
+                let oarch_arch = Architectures.get(&oarch);
+                if oarch_arch.is_none() {
+                    update_progress!("   {}Failed{} Unknown architecture {}",RED,oarch,RESET);
+                }
+                oarch_arch.unwrap().clone()
+            };
+            let out_obj_path = intpath.clone()+"\\main."+&arc.obj_extension;
+            {
+                if let Some(build_files) = build.vars.get("build") {
+                    com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
+                    let vals = build_files.typ.unwrap_array();
+                    let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
+                    com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
+                    for val in vals.iter() {
+                        com_assert!(build_files, val.is_string(), "Error: All elements of build must be strings!");
+                        let val = val.unwrap_string();
+                        let v_ = PathBuf::from(val);
+                        let val = v_.file_stem().unwrap();
+                        let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
+                        let int_rep_str = int_rep.to_str().unwrap_or_default();
+                        let asm_rep = PathBuf::from(val).with_extension("asm");
+                        let asm_rep_str = asm_rep.to_str().unwrap_or_default();
+                        //let exe_rep = Path
+                        let mut oargs = arc.flags.nasm.clone();
+                        oargs.extend(vec![intpath.typ.unwrap_string().clone()+"\\"+asm_rep_str,"-o".to_owned(), intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
+                        update_progress!("   {}Running nasm {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                        let cmd = Command::new("nasm").args(oargs).spawn();
+                        if cmd.is_err() {
+                            update_progress!("   {}Error: could not run nasm command{}\n",RED,RESET);
+                            exit(1);
+                        }
+                        let mut cmd = cmd.unwrap();
+                        let status = cmd.wait();
+                        if status.is_err() {
+                            update_progress!("   {}Error: could not recieve any information from nasm command{}\n",RED,RESET);
+                            exit(1);
+                        }
+                        let ostatus = status.unwrap().code().unwrap_or(1);
+                        if ostatus == 0 {
+                            update_progress!("   {}Finished{} built code with nasm successfully",GREEN,RESET);
+                        }
+                        else {
+                            update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
+                            exit(ostatus)
+                        }
+                    }
+                }
+                let mut oargs = arc.flags.nasm.clone();
+                oargs.extend(vec![intpath.clone()+"\\main.asm","-o".to_owned(), out_obj_path.clone()]);
+                update_progress!("   {}Running nasm {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                let cmd = Command::new("nasm").args(oargs).spawn();
+                if cmd.is_err() {
+                    update_progress!("   {}Error: could not run nasm command{}\n",RED,RESET);
+                    exit(1);
+                }
+                let mut cmd = cmd.unwrap();
+                let status = cmd.wait();
+                if status.is_err() {
+                    update_progress!("   {}Error: could not recieve any information from nasm command{}\n",RED,RESET);
+                    exit(1);
+                }
+                let ostatus = status.unwrap().code().unwrap_or(1);
+                if ostatus == 0 {
+                    update_progress!("   {}Finished{} built code with nasm successfully",GREEN,RESET);
+                }
+                else {
+                    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
+                    exit(ostatus)
+                }
+            }
+            let obuf = binpath.clone()+"\\main."+&arc.exe_extension;
+            let linker = build.vars.get("linker");
+            let linker = if let Some(linker) = linker {
+                com_assert!(linker, linker.typ.is_string(), "Error: Expected linker type to be a string but found other!");
+                linker.typ.unwrap_string().clone()
+            } else {
+                "gcc".to_owned()
+            };
+            match linker.as_str() {
+                "gcc" => {
+                    let mut oargs = arc.flags.gcc.clone();
+                    if let Some(build_files) = build.vars.get("build") {
+                        com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
+                        let vals = build_files.typ.unwrap_array();
+                        let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
+                        com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
+                        for val in vals.iter() {
+                            com_assert!(build_files, val.is_string(), "Error: All elements of build must be strings!");
+                            let val = val.unwrap_string();
+                            let v_ = PathBuf::from(val);
+                            let val = v_.file_stem().unwrap();
+                            let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
+                            let int_rep_str = int_rep.to_str().unwrap_or_default();
+                            oargs.push(intpath.typ.unwrap_string().clone()+"\\"+int_rep_str);
+                        }
+                    }
+                    oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
+                    update_progress!("   {}Running gcc {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                    let cmd = Command::new("gcc").args(oargs).spawn();
+                    if cmd.is_err() {
+                        update_progress!("   {}Error: could not run gcc command{}\n",RED,RESET);
+                        exit(1);
+                    }
+                    let mut cmd = cmd.unwrap();
+                    let status = cmd.wait();
+                    if status.is_err() {
+                        update_progress!("   {}Error: could not recieve any information from gcc command{}\n",RED,RESET);
+                        exit(1);
+                    }
+                    let ostatus = status.unwrap().code().unwrap_or(1);
+                    if ostatus == 0 {
+                        update_progress!("   {}Finished{} built code with gcc successfully",GREEN,RESET);
+                    }
+                    else {
+                        update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
+                        exit(ostatus)
+                    }
+                }
+                "ld" => {
+                    let mut oargs = arc.flags.ld.clone();
+                    //let pbuf = PathBuf::from(out_obj_path.clone());
+                    //let obuf = pbuf.with_extension("exe").to_str().unwrap().to_owned();
+                    if let Some(build_files) = build.vars.get("build") {
+                        com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
+                        let vals = build_files.typ.unwrap_array();
+                        let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
+                        com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
+                        for val in vals.iter() {
+                            com_assert!(build_files, val.is_string(), "Error: All elements of build must be strings!");
+                            let val = val.unwrap_string();
+                            let v_ = PathBuf::from(val);
+                            let val = v_.file_stem().unwrap();
+                            let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
+                            let int_rep_str = int_rep.to_str().unwrap_or_default();
+                            oargs.push(intpath.typ.unwrap_string().clone()+"\\"+int_rep_str);
+                        }
+                    }
+                    oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
+                    update_progress!("   {}Running ld {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                    let cmd = Command::new("ld").args(oargs).spawn();
+                    if cmd.is_err() {
+                        update_progress!("   {}Error: could not run ld command{}\n",RED,RESET);
+                        exit(1);
+                    }
+                    let mut cmd = cmd.unwrap();
+                    let status = cmd.wait();
+                    if status.is_err() {
+                        update_progress!("   {}Error: could not recieve any information from ld command{}\n",RED,RESET);
+                        exit(1);
+                    }
+                    let ostatus = status.unwrap().code().unwrap_or(1);
+                    if ostatus == 0 {
+                        update_progress!("   {}Finished{} built code with ld successfully",GREEN,RESET);
+                    }
+                    else {
+                        update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
+                        exit(ostatus)
+                    }
+                }
+                _ => {
+                    update_progress!("   {}Failed Lighthouse does not support linker '{}'{}\n",RED,linker,RESET);
+                    exit(1)
+                }
+            }
+            update_progress!("   {}Finished{} Compiled program sucessfully",GREEN,RESET);
+            obuf
+        }
+        _ => {
+            todo!("Cannot build for target {} yet",target_typ);
+        }
+    }
+}
+
 fn main() {
     let mut Architectures: HashMap<String, LHArchitecture> = HashMap::new();
     
@@ -850,294 +1104,45 @@ fn main() {
             update_progress!("   {}Package verified{}",GREEN,RESET);
         }
         "build" => {
-            build_package();
+            build_package(current_dir().unwrap_or_default());
         }
         "run" => {
-            let build = build_package();
+            let build = build_package(current_dir().unwrap_or_default());
             
-            let target_typ = if let Some(otarget) = build.vars.get("target") {
-                com_assert!(otarget.loc,otarget.typ.is_string(),"Error: Expected string but found other");
-                otarget.typ.unwrap_string().clone()
-            } else {
-                "nasm_x86_64".to_owned()
-            };
-            match target_typ.as_str() {
-                "nasm_x86_64" => {
-                    let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
-                    com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
-                    let intpath = intpath.typ.unwrap_string();
-                    let binpath = build.vars.get("binpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
-                    com_assert!(binpath, binpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
-                    let binpath = binpath.typ.unwrap_string();
-                    let oarch = if let Some(architecture) = build.vars.get("arch") {
-                        com_assert!(architecture,architecture.typ.is_string(), "Error: Expected string but found something else!");
-                        architecture.typ.unwrap_string().to_owned()
-                    } else {
-                        "".to_owned()+env::consts::OS+"_"+env::consts::ARCH
-                    };
-                    let arc = if oarch == "custom" {
-                        let arch_path = build.vars.get("arch_path").expect("Cannot have arch=\"custom\" without arch_path");
-                        com_assert!(arch_path,arch_path.typ.is_string(), "Error: Expected string but found other!");
-                        let arch_path_buf = PathBuf::from(arch_path.typ.unwrap_string()).with_extension("cfg");
-                        com_assert!(arch_path,arch_path_buf.exists(), "Error: Expected \"{}\" to exist however it doesn't!",arch_path_buf.to_string_lossy());
-                        let data = fs::read_to_string(arch_path_buf.clone());
-                        if data.is_err() {
-                            update_progress!("   {}Failed{} Could not read arch config for \"{}\"\nReason: {}",RED,RESET,arch_path_buf.to_string_lossy(),data.unwrap_err().to_string());
-                            exit(1);
-                        }
-                        let data = data.unwrap();
-                        let mut lexer = CfgLexer::new(data);
-                        lexer.loc.file = Rc::new(arch_path_buf.to_str().unwrap().to_owned());
-                        let build = parse_tokens_to_build(&mut lexer);
-                        let mut outarch = LHArchitecture::new();
-                        
-                        let obj_var = com_expect!(lexer, build.vars.get("obj_extension"), "Error: Expected obj_extension for architecture build but found nothing!");
-                        com_assert!(obj_var,obj_var.typ.is_string(), "Error: expected obj_extension to be string but found nothing!");
-                        outarch.obj_extension = obj_var.typ.unwrap_string().clone();
-                        let obj_var = com_expect!(lexer, build.vars.get("exe_extension"), "Error: Expected exe_extension for architecture build but found nothing!");
-                        com_assert!(obj_var,obj_var.typ.is_string(), "Error: expected exe_extension to be string but found nothing!");
-                        outarch.exe_extension = obj_var.typ.unwrap_string().clone();
-
-
-
-                        let get_var = "flags_nasm";
-                        let obj_var = com_expect!(lexer, build.vars.get(get_var), "Error: Expected {get_var} for architecture build but found nothing!");
-                        com_assert!(obj_var,obj_var.typ.is_array(), "Error: expected {get_var} to be an array but found nothing!");
-                        let obj_var_ar = obj_var.typ.unwrap_array();
-                        let mut obody: Vec<String> = Vec::with_capacity(obj_var_ar.len());
-                        for obj in obj_var_ar {
-                            com_assert!(obj_var, obj.is_string(), "Error: Cannot have flags to {get_var} which are not strings");
-                            obody.push(obj.unwrap_string().clone())
-                        }
-                        outarch.flags.nasm = obody;
-
-                        let get_var = "flags_gcc";
-                        let obj_var = com_expect!(lexer, build.vars.get(get_var), "Error: Expected {get_var} for architecture build but found nothing!");
-                        com_assert!(obj_var,obj_var.typ.is_array(), "Error: expected {get_var} to be an array but found nothing!");
-                        let obj_var_ar = obj_var.typ.unwrap_array();
-                        let mut obody: Vec<String> = Vec::with_capacity(obj_var_ar.len());
-                        for obj in obj_var_ar {
-                            com_assert!(obj_var, obj.is_string(), "Error: Cannot have flags to {get_var} which are not strings");
-                            obody.push(obj.unwrap_string().clone())
-                        }
-                        outarch.flags.gcc = obody;
-
-                        let get_var = "flags_ld";
-                        let obj_var = com_expect!(lexer, build.vars.get(get_var), "Error: Expected {get_var} for architecture build but found nothing!");
-                        com_assert!(obj_var,obj_var.typ.is_array(), "Error: expected {get_var} to be an array but found nothing!");
-                        let obj_var_ar = obj_var.typ.unwrap_array();
-                        let mut obody: Vec<String> = Vec::with_capacity(obj_var_ar.len());
-                        for obj in obj_var_ar {
-                            com_assert!(obj_var, obj.is_string(), "Error: Cannot have flags to {get_var} which are not strings");
-                            obody.push(obj.unwrap_string().clone())
-                        }
-                        outarch.flags.ld = obody;
-                        //outarch.obj_extension = obj_var.typ.unwrap_string().clone();
-                        
-                        outarch
-                    } else {
-                        let oarch_arch = Architectures.get(&oarch);
-                        if oarch_arch.is_none() {
-                            update_progress!("   {}Failed{} Unknown architecture {}",RED,oarch,RESET);
-                        }
-                        oarch_arch.unwrap().clone()
-                    };
-                    let out_obj_path = intpath.clone()+"\\main."+&arc.obj_extension;
-                    {
-                        if let Some(build_files) = build.vars.get("build") {
-                            com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
-                            let vals = build_files.typ.unwrap_array();
-                            let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
-                            com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
-                            for val in vals.iter() {
-                                com_assert!(build_files, val.is_string(), "Error: All elements of build must be strings!");
-                                let val = val.unwrap_string();
-                                let v_ = PathBuf::from(val);
-                                let val = v_.file_stem().unwrap();
-                                let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
-                                let int_rep_str = int_rep.to_str().unwrap_or_default();
-                                let asm_rep = PathBuf::from(val).with_extension("asm");
-                                let asm_rep_str = asm_rep.to_str().unwrap_or_default();
-                                //let exe_rep = Path
-                                let mut oargs = arc.flags.nasm.clone();
-                                oargs.extend(vec![intpath.typ.unwrap_string().clone()+"\\"+asm_rep_str,"-o".to_owned(), intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
-                                update_progress!("   {}Running nasm {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
-                                let cmd = Command::new("nasm").args(oargs).spawn();
-                                if cmd.is_err() {
-                                    update_progress!("   {}Error: could not run nasm command{}\n",RED,RESET);
-                                    exit(1);
-                                }
-                                let mut cmd = cmd.unwrap();
-                                let status = cmd.wait();
-                                if status.is_err() {
-                                    update_progress!("   {}Error: could not recieve any information from nasm command{}\n",RED,RESET);
-                                    exit(1);
-                                }
-                                let ostatus = status.unwrap().code().unwrap_or(1);
-                                if ostatus == 0 {
-                                    update_progress!("   {}Finished{} built code with nasm successfully",GREEN,RESET);
-                                }
-                                else {
-                                    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
-                                    exit(ostatus)
-                                }
-                            }
-                        }
-                        let mut oargs = arc.flags.nasm.clone();
-                        oargs.extend(vec![intpath.clone()+"\\main.asm","-o".to_owned(), out_obj_path.clone()]);
-                        update_progress!("   {}Running nasm {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
-                        let cmd = Command::new("nasm").args(oargs).spawn();
-                        if cmd.is_err() {
-                            update_progress!("   {}Error: could not run nasm command{}\n",RED,RESET);
-                            exit(1);
-                        }
-                        let mut cmd = cmd.unwrap();
-                        let status = cmd.wait();
-                        if status.is_err() {
-                            update_progress!("   {}Error: could not recieve any information from nasm command{}\n",RED,RESET);
-                            exit(1);
-                        }
-                        let ostatus = status.unwrap().code().unwrap_or(1);
-                        if ostatus == 0 {
-                            update_progress!("   {}Finished{} built code with nasm successfully",GREEN,RESET);
-                        }
-                        else {
-                            update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
-                            exit(ostatus)
-                        }
-                    }
-                    let obuf = binpath.clone()+"\\main."+&arc.exe_extension;
-                    let linker = build.vars.get("linker");
-                    let linker = if let Some(linker) = linker {
-                        com_assert!(linker, linker.typ.is_string(), "Error: Expected linker type to be a string but found other!");
-                        linker.typ.unwrap_string().clone()
-                    } else {
-                        "gcc".to_owned()
-                    };
-                    match linker.as_str() {
-                        "gcc" => {
-                            let mut oargs = arc.flags.gcc.clone();
-                            if let Some(build_files) = build.vars.get("build") {
-                                com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
-                                let vals = build_files.typ.unwrap_array();
-                                let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
-                                com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
-                                for val in vals.iter() {
-                                    com_assert!(build_files, val.is_string(), "Error: All elements of build must be strings!");
-                                    let val = val.unwrap_string();
-                                    let v_ = PathBuf::from(val);
-                                    let val = v_.file_stem().unwrap();
-                                    let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
-                                    let int_rep_str = int_rep.to_str().unwrap_or_default();
-                                    oargs.push(intpath.typ.unwrap_string().clone()+"\\"+int_rep_str);
-                                }
-                            }
-                            oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
-                            update_progress!("   {}Running gcc {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
-                            let cmd = Command::new("gcc").args(oargs).spawn();
-                            if cmd.is_err() {
-                                update_progress!("   {}Error: could not run gcc command{}\n",RED,RESET);
-                                exit(1);
-                            }
-                            let mut cmd = cmd.unwrap();
-                            let status = cmd.wait();
-                            if status.is_err() {
-                                update_progress!("   {}Error: could not recieve any information from gcc command{}\n",RED,RESET);
-                                exit(1);
-                            }
-                            let ostatus = status.unwrap().code().unwrap_or(1);
-                            if ostatus == 0 {
-                                update_progress!("   {}Finished{} built code with gcc successfully",GREEN,RESET);
-                            }
-                            else {
-                                update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
-                                exit(ostatus)
-                            }
-                        }
-                        "ld" => {
-                            let mut oargs = arc.flags.ld.clone();
-                            //let pbuf = PathBuf::from(out_obj_path.clone());
-                            //let obuf = pbuf.with_extension("exe").to_str().unwrap().to_owned();
-                            if let Some(build_files) = build.vars.get("build") {
-                                com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
-                                let vals = build_files.typ.unwrap_array();
-                                let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
-                                com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
-                                for val in vals.iter() {
-                                    com_assert!(build_files, val.is_string(), "Error: All elements of build must be strings!");
-                                    let val = val.unwrap_string();
-                                    let v_ = PathBuf::from(val);
-                                    let val = v_.file_stem().unwrap();
-                                    let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
-                                    let int_rep_str = int_rep.to_str().unwrap_or_default();
-                                    oargs.push(intpath.typ.unwrap_string().clone()+"\\"+int_rep_str);
-                                }
-                            }
-                            oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
-                            update_progress!("   {}Running ld {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
-                            let cmd = Command::new("ld").args(oargs).spawn();
-                            if cmd.is_err() {
-                                update_progress!("   {}Error: could not run ld command{}\n",RED,RESET);
-                                exit(1);
-                            }
-                            let mut cmd = cmd.unwrap();
-                            let status = cmd.wait();
-                            if status.is_err() {
-                                update_progress!("   {}Error: could not recieve any information from ld command{}\n",RED,RESET);
-                                exit(1);
-                            }
-                            let ostatus = status.unwrap().code().unwrap_or(1);
-                            if ostatus == 0 {
-                                update_progress!("   {}Finished{} built code with ld successfully",GREEN,RESET);
-                            }
-                            else {
-                                update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
-                                exit(ostatus)
-                            }
-                        }
-                        _ => {
-                            update_progress!("   {}Failed Lighthouse does not support linker '{}'{}\n",RED,linker,RESET);
-                            exit(1)
-                        }
-                    }
-                    update_progress!("   {}Finished{} Compiled program sucessfully",GREEN,RESET);
-                    {
-                        let cmd = Command::new(obuf).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
-                        println!();
-                        if cmd.is_err() {
-                            update_progress!("   {}Error: could not run program{}\n",RED,RESET);
-                            exit(1);
-                        }
-                        let mut cmd = cmd.unwrap();
-                        let status = cmd.wait();
-                        if status.is_err() {
-                            update_progress!("   {}Error: could not recieve any information from program{}\n",RED,RESET);
-                            exit(1);
-                        }
-                        let ostatus = status.unwrap().code().unwrap_or(1);
-                        if ostatus == 0 {
-                            println!("   {}Program exited with {}{}",GREEN,ostatus,RESET)
-                        }
-                        else{
-                            println!("   {}Program exited with {}{}",RED,ostatus,RESET)
-                        }
-                        //if ostatus == 0 {
-                        //    update_progress!("   {}Finished{} ran code with gcc successfully",GREEN,RESET);
-                        //}
-                        //else {
-                        //    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED,RESET,ostatus);
-                        //    exit(ostatus)
-                        //}
-                        
-                    }
+            let obuf = compile_package(&build,&Architectures);
+            {
+                let cmd = Command::new(obuf).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
+                println!();
+                if cmd.is_err() {
+                    update_progress!("   {}Error: could not run program{}\n",RED,RESET);
+                    exit(1);
+                }
+                let mut cmd = cmd.unwrap();
+                let status = cmd.wait();
+                if status.is_err() {
+                    update_progress!("   {}Error: could not recieve any information from program{}\n",RED,RESET);
+                    exit(1);
+                }
+                let ostatus = status.unwrap().code().unwrap_or(1);
+                if ostatus == 0 {
+                    println!("   {}Program exited with {}{}",GREEN,ostatus,RESET)
+                }
+                else{
+                    println!("   {}Program exited with {}{}",RED,ostatus,RESET)
+                }
+                //if ostatus == 0 {
+                //    update_progress!("   {}Finished{} ran code with gcc successfully",GREEN,RESET);
+                //}
+                //else {
+                //    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED,RESET,ostatus);
+                //    exit(ostatus)
+                //}
                 
-                    
-                    //Command::new("nasm").args(vec!["-f"])
-                }
-                _ => {
-                    todo!("Cannot build for target {} yet",target_typ);
-                }
             }
+        
+            
+            //Command::new("nasm").args(vec!["-f"])
+            
         }
         "init" => {
             update_progress!("   {}Checking for existing package{}",GREEN,RESET);
@@ -1305,4 +1310,5 @@ fn main() {
 /*
 local_dependencies=["../../stdlib"]            // you would pass the -i flag with this array and it will make it easier to include (you can just do include "stdlib.spl")
                                                // it also builds the package and if it has anything under "build" it also links with it
+
 */
