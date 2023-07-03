@@ -665,12 +665,16 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
             com_assert!(arch, arch.typ.is_string(), "Error: Expected arch to be string but found other");
             Some(arch.typ.unwrap_string())
         } else { None };
-
+        let opmode = if let Some(opmode) = build.vars.get("mode") {
+            com_assert!(opmode, opmode.typ.is_string(), "Error: Expected mode to be string but found other");
+            Some(opmode.typ.unwrap_string().to_owned())
+        } else { None };
         let mut oargs: Vec<String> = Vec::new();
         if let Some(otarget) = build.vars.get("target") {
             com_assert!(otarget.loc,otarget.typ.is_string(),"Error: Expected string but found other");
             oargs.extend(vec!["-t".to_owned(),otarget.typ.unwrap_string().clone()]);
         }
+        
         let entry = build.vars.get("entry").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
         com_assert!(entry, entry.typ.is_string(), "Error: Expected value of entry to be string but found other");
         oargs.push(entry.typ.unwrap_string().clone());
@@ -688,7 +692,11 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
         let int_rep_str = int_rep.to_str().unwrap_or_default();
         let intpath = build.vars.get("intpath").expect("Error: Expected entry but found nothing! Cannot have build without entry specification for now (libs are yet to be implemented for lighthouse)");
         com_assert!(intpath, intpath.typ.is_string(), "Error: Expected value of entry to be string but found other");
-        
+        if let Some(opmode) = &opmode {
+            if opmode == "release" {
+                oargs.extend(vec!["-release".to_owned()])
+            }
+        }
         oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
         if arch.is_some() {
             if arch.unwrap() == "custom" {
@@ -761,6 +769,11 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
                 let mut oargs: Vec<String> = Vec::new();
                 com_assert!(build_files, val.is_string(), "Error: All elements of build must be strings!");
                 let val = val.unwrap_string();
+                if let Some(opmode) = &opmode {
+                    if opmode == "release" {
+                        oargs.extend(vec!["-release".to_owned()])
+                    }
+                }
                 oargs.push(val.clone());
                 let v_ = PathBuf::from(val);
                 let val = v_.file_stem().unwrap();
