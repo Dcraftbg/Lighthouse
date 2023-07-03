@@ -50,10 +50,18 @@ entry="{PATH TO CURRENT FOLDER}\src\main.spl"
 Some things you may want to change:
 ```cfg
 target="nasm_x86_64"  ## You can change the target (Check sopl documentation for currently supported targets)
+
 build=[]              ## You can build certain parts of your project to then be linked together with the linker
+
 arch="linux_x86_64"   ## You can also make it "custom" which would require you to also have arch_path as a variable that points to the json file (in the same folder you have to also have a cfg file with the same name as the json - checkout examples/arcs in SOPL repository)
+
 linker="gcc"          ## Specify which linker to use
+
+local_dependencies=[] ## What things do you depend on? With this you can shorten your including from ``` include "../libs/strlib/strlib.spl" ``` to just ``` include "strlib/strlib.spl" ```. For right now it just adds the -i flag but in the future it may add more
+
+mode="release"        ## Change for which mode of sopl you are building -release or none
 ```
+
 ## What does it do?
 It makes it easier to manage your sopl code. SOPL is supposed to be the core part of the manager, with its purpose being - easier testing, running, etc.
 
