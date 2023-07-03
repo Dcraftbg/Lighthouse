@@ -84,5 +84,5 @@ By default when you build your project, the resulting .asm file will be put insi
 src\main.spl -> output\int\main.asm
 ```
 ### Running
-By running the program you are essentially building it, but also using things such as nasm and gcc to run it.
+By running the program you are essentially building it, but also using things such as nasm and gcc to compile it, and then at the end running it.
 The object files will be stored in the output\int directory whilst the executable/s will be stored in the output\bin directory.
