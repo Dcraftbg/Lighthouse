@@ -1169,7 +1169,8 @@ fn main() {
                     }
                     update_progress!("   {}Finished{} Compiled program sucessfully",GREEN,RESET);
                     {
-                        let cmd = Command::new(obuf).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
+                        //println!("Args: {:?}",args);
+                        let cmd = Command::new(obuf).args(args).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
                         println!();
                         if cmd.is_err() {
                             update_progress!("   {}Error: could not run program{}\n",RED,RESET);
