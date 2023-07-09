@@ -23,7 +23,7 @@ struct CfgLexer {
     cursor: usize,
     loc: ProgramLocation
 }
-#[derive(PartialEq)]
+#[derive(PartialEq,Debug)]
 enum IntrinsicType {
     OPENSQUARE,
     CLOSESQUARE,
@@ -46,7 +46,7 @@ impl IntrinsicType {
         }
     }
 }
-#[derive(PartialEq)]
+#[derive(PartialEq,Debug)]
 enum SETOp {
     SET
 }
@@ -63,7 +63,7 @@ impl SETOp {
         }
     }
 }
-#[derive(PartialEq)]
+#[derive(PartialEq,Debug)]
 enum TokenType {
     WordType(String),
     StringType(String),
@@ -83,6 +83,7 @@ impl TokenType{
         }
     }
 }
+#[derive(Debug)]
 struct Token {
     loc: ProgramLocation,
     typ: TokenType
@@ -92,7 +93,7 @@ impl Token {
         self.loc.loc_display()
     }
 }
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 enum CfgVarType {
     STRING(String),
     NUMBER(i64),
@@ -353,10 +354,10 @@ impl CfgLexer {
     fn pop_symbol(&mut self) -> Option<String> {
         let mut o = String::new();
         let mut c = self.cchar_s()?;
-        if !c.is_alphabetic() && c != '_'{
+        if !c.is_alphabetic() && c != '_' && c!='$'{
             return None;
         }
-        while self.is_not_empty() && c.is_alphanumeric() || c=='_'{
+        while self.is_not_empty() && c.is_alphanumeric() || c=='_' || c=='$'{
             c = self.cchar_s()?;
             self.cursor += 1;
             o.push(c);
@@ -437,7 +438,7 @@ impl Iterator for CfgLexer {
                 return Some(Token { loc: self.loc.clone(), typ: TokenType::IntrinsicType(IntrinsicType::from_str(tmp.as_str()).expect("Unhandled :(")) });
             }
             _ => {
-                if c.is_alphabetic() || c == '_' {
+                if c.is_alphabetic() || c == '_' || c == '$'{
                     let outstr = self.pop_symbol()?;
                     return Some(Token { loc: self.loc.clone(), typ: TokenType::WordType(outstr) });
                 }
@@ -587,10 +588,28 @@ fn parse_tokens_to_build(lexer: &mut CfgLexer) -> CfgBuild {
     while let Some(token) = lexer.next() {
         match token.typ {
             TokenType::WordType(word) => {
+                par_assert!(lexer, !word.starts_with("$"),"Error: Cannot set Environmental Variable in config :(");
                 let ntok = par_expect!(lexer,lexer.next(),"Error: Expected setop after word but found nothing");
                 par_assert!(ntok,ntok.typ==TokenType::SETOp(SETOp::SET), "Error: Expected setop but found {}",ntok.typ.to_string());
+                //println!("WHATDAFUCK");
                 let ntok = par_expect!(lexer,lexer.next(),"Error: Expected value after setop but found nothing");
+                //println!("\n\nntok: {:?}",ntok);
                 match ntok.typ {
+                    TokenType::WordType(v) => {
+                        if v.starts_with("$") {
+                            match env::var(&v[1..]) {
+                                Ok(val) => {
+                                    build.vars.insert(word, CfgVar { typ: CfgVarType::STRING(val), loc: ntok.loc });
+                                }
+                                Err(err) => {
+                                    par_error!(lexer, "Error: Could not find environmental variable {}\nReason: {}",&v[1..],err.to_string())
+                                }
+                            }
+                        }
+                        else {
+                            build.vars.insert(word, CfgVar { typ: par_expect!(lexer,build.vars.get(&v).as_ref(),"Error: expected set word value to be a variable but variable {} does not exit!",v).typ.clone(), loc: ntok.loc });
+                        }
+                    }
                     TokenType::NumberType(v) => {
                         build.vars.insert(word, CfgVar { typ: CfgVarType::NUMBER(v), loc: ntok.loc});
                     }
@@ -602,6 +621,21 @@ fn parse_tokens_to_build(lexer: &mut CfgLexer) -> CfgBuild {
                         let mut array_body: Vec<CfgVarType> = Vec::new();
                         while let Some(t) = lexer.next() {
                             match t.typ {
+                                TokenType::WordType(v) => {
+                                    if v.starts_with("$") {
+                                        match env::var(&v[1..]) {
+                                            Ok(val) => {
+                                                array_body.push(CfgVarType::STRING(val))
+                                            }
+                                            Err(err) => {
+                                                par_error!(lexer, "Error: Could not find environmental variable {}\nReason: {}",&v[1..],err.to_string())
+                                            }
+                                        }
+                                    }
+                                    else {
+                                        array_body.push(par_expect!(lexer,build.vars.get(&v).as_ref(),"Error: expected element in array to be an exiting variable but variable {} does not exit!",v).typ.clone())
+                                    }
+                                }
                                 TokenType::NumberType(v) => {
                                     array_body.push(CfgVarType::NUMBER(v))
                                 }
@@ -628,6 +662,7 @@ fn parse_tokens_to_build(lexer: &mut CfgLexer) -> CfgBuild {
                         build.vars.insert(word, CfgVar { typ: CfgVarType::ARRAY(array_body), loc: ntok.loc });
                     }
                     _ => {
+                        
                         par_error!(ntok,"Error: Expected String or Number but found {}",ntok.typ.to_string())
                     }
                 }
