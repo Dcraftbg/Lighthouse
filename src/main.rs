@@ -7,6 +7,9 @@
 
 use core::panic;
 use std::{env::{self, current_dir}, thread, time, io::{Write, stderr}, ffi::OsStr, path::{PathBuf, Path}, process::{exit, Command, Stdio}, fs::{create_dir, File, OpenOptions, self}, rc::Rc, fmt::format, collections::HashMap};
+use colorscape::*;
+use colorscape::Color::Bold::*;
+use colorscape::Color::RESET;
 #[derive(Clone,Debug)]
 struct ProgramLocation {
     file: Rc<String>,
@@ -531,10 +534,7 @@ macro_rules! update_progress {
     });
 }
 
-const RED: &str = "\x1b[31;1m";
-const GREEN: &str = "\x1b[32;1m";
-const LIGHT_BLUE: &str= "\x1b[96;1m";
-const RESET: &str = "\x1b[0m";
+
 static mut LAST_MSG_LEN: usize = 0;
 
 
@@ -673,28 +673,28 @@ fn parse_tokens_to_build(lexer: &mut CfgLexer) -> CfgBuild {
     build
 }
 fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
-    update_progress!("   {}Verifying package{}",LIGHT_BLUE,RESET);    
+    update_progress!("   {}Verifying package{}",LIGHT_BLUE(),RESET());    
     let cdirstr = cdir.to_str().unwrap_or_default().to_owned();
     let res = verify_package_exists(cdirstr);
     if res.is_err() {
         let err = res.unwrap_err();
-        update_progress!("   {}Error: Invalid package: {}{}",RED,err,RESET);
+        update_progress!("   {}Error: Invalid package: {}{}",RED(),err,RESET());
         exit(1);
     }
     let res = res.unwrap();
-    update_progress!("   {}Package verified{}",GREEN,RESET);
+    update_progress!("   {}Package verified{}",GREEN(),RESET());
     let f = fs::read_to_string(res.cfg);
     if f.is_err() {
         let err = f.unwrap_err();
-        update_progress!("   {}Error: Could not open config: {}{}",RED,err,RESET);
+        update_progress!("   {}Error: Could not open config: {}{}",RED(),err,RESET());
         exit(1);
     }
     let cfgstr = f.unwrap();
     let mut lexer = CfgLexer::new(cfgstr);
-    update_progress!("    {}Parsing lighthouse.cfg{}",LIGHT_BLUE,RESET);
+    update_progress!("    {}Parsing lighthouse.cfg{}",LIGHT_BLUE(),RESET());
     lexer.loc.file = Rc::new("lighthouse.cfg".to_owned());
     let build = parse_tokens_to_build(&mut lexer);
-    update_progress!("   {}Parsed lighthouse.cfg successfully{}",GREEN,RESET);
+    update_progress!("   {}Parsed lighthouse.cfg successfully{}",GREEN(),RESET());
     {
         let arch = if let Some(arch) = build.vars.get("arch") {
             com_assert!(arch, arch.typ.is_string(), "Error: Expected arch to be string but found other");
@@ -716,11 +716,11 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
 
         let entry_path = PathBuf::from(entry.typ.unwrap_string().clone());
         if !entry_path.exists() {
-            update_progress!("   {}Error: entry path {} does not exist (entry defined {}){}\n",RED,entry.typ.unwrap_string(),entry.loc_display(),RESET);
+            update_progress!("   {}Error: entry path {} does not exist (entry defined {}){}\n",RED(),entry.typ.unwrap_string(),entry.loc_display(),RESET());
             exit(1);
         }
         if !entry_path.is_file() {
-            update_progress!("   {}Error: entry path {} isn't a file (entry defined {}){}\n",RED,entry.typ.unwrap_string(),entry.loc_display(),RESET);
+            update_progress!("   {}Error: entry path {} isn't a file (entry defined {}){}\n",RED(),entry.typ.unwrap_string(),entry.loc_display(),RESET());
             exit(1);
         }
         let int_rep = PathBuf::from(entry_path.file_stem().unwrap()).with_extension("asm");
@@ -769,29 +769,29 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
             }
         }
 
-        update_progress!("   {}Running sopl {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+        update_progress!("   {}Running sopl {}{}",LIGHT_BLUE(),oargs.join(" "),RESET());
         let cmd = Command::new("sopl").args(oargs).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
         
         if cmd.is_err() {
             println!();
-            update_progress!("   {}Error: could not run sopl command{}\n",RED,RESET);
+            update_progress!("   {}Error: could not run sopl command{}\n",RED(),RESET());
             exit(1);
         }
         let mut cmd = cmd.unwrap();
         let status = cmd.wait();
         if status.is_err() {
             println!();
-            update_progress!("   {}Error: could not recieve any information from sopl command{}\n",RED,RESET);
+            update_progress!("   {}Error: could not recieve any information from sopl command{}\n",RED(),RESET());
             exit(1);
         }
         let status = status.unwrap();
         let ostatus = status.code().unwrap_or(1);
         if ostatus == 0 {
-            update_progress!("   {}Finished{} built code successfully",GREEN,RESET);
+            update_progress!("   {}Finished{} built code successfully",GREEN(),RESET());
         }
         else {
             println!();
-            update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED,RESET,ostatus);
+            update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED(),RESET(),ostatus);
             exit(ostatus)
         }
         
@@ -838,25 +838,25 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
                         i+=1;
                     }
                 }
-                update_progress!("   {}Running sopl {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                update_progress!("   {}Running sopl {}{}",LIGHT_BLUE(),oargs.join(" "),RESET());
                 let cmd = Command::new("sopl").args(oargs).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
                 if cmd.is_err() {
-                    update_progress!("   {}Error: could not run sopl command{}\n",RED,RESET);
+                    update_progress!("   {}Error: could not run sopl command{}\n",RED(),RESET());
                     exit(1);
                 }
                 let mut cmd = cmd.unwrap();
                 let status = cmd.wait();
                 if status.is_err() {
-                    update_progress!("   {}Error: could not recieve any information from sopl command{}\n",RED,RESET);
+                    update_progress!("   {}Error: could not recieve any information from sopl command{}\n",RED(),RESET());
                     exit(1);
                 }
                 let status = status.unwrap();
                 let ostatus = status.code().unwrap_or(1);
                 if ostatus == 0 {
-                    update_progress!("   {}Finished{} built code successfully",GREEN,RESET);
+                    update_progress!("   {}Finished{} built code successfully",GREEN(),RESET());
                 }
                 else {
-                    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED,RESET,ostatus);
+                    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}",RED(),RESET(),ostatus);
                     exit(ostatus)
                 }
             }
@@ -902,6 +902,7 @@ fn usage(program: String){
 
 
 fn main() {
+    Color::init();
     let mut Architectures: HashMap<String, LHArchitecture> = HashMap::new();
     
     Architectures.insert("windows_x86_64".to_owned(), LHArchitecture{flags: ArcFlags { nasm: vec!["-f".to_string(),"win64".to_string()], gcc: vec!["-m64".to_string()], ld: Vec::new() }, obj_extension: "obj".to_owned(), exe_extension: "exe".to_owned()});
@@ -926,16 +927,16 @@ fn main() {
             exit(0)
         }
         "verify" => {
-            update_progress!("   {}Verifying package{}",LIGHT_BLUE,RESET);
+            update_progress!("   {}Verifying package{}",LIGHT_BLUE(),RESET());
             let cdir = current_dir().unwrap_or_default();
             let cdirstr = cdir.to_str().unwrap_or_default().to_owned();
             let res = verify_package_exists(cdirstr);
             if res.is_err() {
                 let err = res.unwrap_err();
-                update_progress!("   {}Error: Invalid package: {}{}",RED,err,RESET);
+                update_progress!("   {}Error: Invalid package: {}{}",RED(),err,RESET());
                 exit(1);
             }
-            update_progress!("   {}Package verified{}",GREEN,RESET);
+            update_progress!("   {}Package verified{}",GREEN(),RESET());
         }
         "build" => {
             build_package(current_dir().unwrap_or_default());
@@ -948,7 +949,7 @@ fn main() {
             match ptyp_str.as_str() {
                 "bin" => {}
                 "lib" => {
-                    update_progress!("   {}Failed{} Cannot run package of type lib! (type defined here: {})",RED,RESET,ptyp.loc_display());
+                    update_progress!("   {}Failed{} Cannot run package of type lib! (type defined here: {})",RED(),RESET(),ptyp.loc_display());
                     exit(1);
                 }
                 _ => {
@@ -984,7 +985,7 @@ fn main() {
                         com_assert!(arch_path,arch_path_buf.exists(), "Error: Expected \"{}\" to exist however it doesn't!",arch_path_buf.to_string_lossy());
                         let data = fs::read_to_string(arch_path_buf.clone());
                         if data.is_err() {
-                            update_progress!("   {}Failed{} Could not read arch config for \"{}\"\nReason: {}",RED,RESET,arch_path_buf.to_string_lossy(),data.unwrap_err().to_string());
+                            update_progress!("   {}Failed{} Could not read arch config for \"{}\"\nReason: {}",RED(),RESET(),arch_path_buf.to_string_lossy(),data.unwrap_err().to_string());
                             exit(1);
                         }
                         let data = data.unwrap();
@@ -1040,7 +1041,7 @@ fn main() {
                     } else {
                         let oarch_arch = Architectures.get(&oarch);
                         if oarch_arch.is_none() {
-                            update_progress!("   {}Failed{} Unknown architecture {}",RED,oarch,RESET);
+                            update_progress!("   {}Failed{} Unknown architecture {}",RED(),oarch,RESET());
                         }
                         oarch_arch.unwrap().clone()
                     };
@@ -1063,48 +1064,48 @@ fn main() {
                                 //let exe_rep = Path
                                 let mut oargs = arc.flags.nasm.clone();
                                 oargs.extend(vec![intpath.typ.unwrap_string().clone()+"\\"+asm_rep_str,"-o".to_owned(), intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
-                                update_progress!("   {}Running nasm {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                                update_progress!("   {}Running nasm {}{}",LIGHT_BLUE(),oargs.join(" "),RESET());
                                 let cmd = Command::new("nasm").args(oargs).spawn();
                                 if cmd.is_err() {
-                                    update_progress!("   {}Error: could not run nasm command{}\n",RED,RESET);
+                                    update_progress!("   {}Error: could not run nasm command{}\n",RED(),RESET());
                                     exit(1);
                                 }
                                 let mut cmd = cmd.unwrap();
                                 let status = cmd.wait();
                                 if status.is_err() {
-                                    update_progress!("   {}Error: could not recieve any information from nasm command{}\n",RED,RESET);
+                                    update_progress!("   {}Error: could not recieve any information from nasm command{}\n",RED(),RESET());
                                     exit(1);
                                 }
                                 let ostatus = status.unwrap().code().unwrap_or(1);
                                 if ostatus == 0 {
-                                    update_progress!("   {}Finished{} built code with nasm successfully",GREEN,RESET);
+                                    update_progress!("   {}Finished{} built code with nasm successfully",GREEN(),RESET());
                                 }
                                 else {
-                                    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
+                                    update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED(),RESET(),ostatus);
                                     exit(ostatus)
                                 }
                             }
                         }
                         let mut oargs = arc.flags.nasm.clone();
                         oargs.extend(vec![intpath.clone()+"\\main.asm","-o".to_owned(), out_obj_path.clone()]);
-                        update_progress!("   {}Running nasm {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                        update_progress!("   {}Running nasm {}{}",LIGHT_BLUE(),oargs.join(" "),RESET());
                         let cmd = Command::new("nasm").args(oargs).spawn();
                         if cmd.is_err() {
-                            update_progress!("   {}Error: could not run nasm command{}\n",RED,RESET);
+                            update_progress!("   {}Error: could not run nasm command{}\n",RED(),RESET());
                             exit(1);
                         }
                         let mut cmd = cmd.unwrap();
                         let status = cmd.wait();
                         if status.is_err() {
-                            update_progress!("   {}Error: could not recieve any information from nasm command{}\n",RED,RESET);
+                            update_progress!("   {}Error: could not recieve any information from nasm command{}\n",RED(),RESET());
                             exit(1);
                         }
                         let ostatus = status.unwrap().code().unwrap_or(1);
                         if ostatus == 0 {
-                            update_progress!("   {}Finished{} built code with nasm successfully",GREEN,RESET);
+                            update_progress!("   {}Finished{} built code with nasm successfully",GREEN(),RESET());
                         }
                         else {
-                            update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
+                            update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED(),RESET(),ostatus);
                             exit(ostatus)
                         }
                     }
@@ -1135,24 +1136,24 @@ fn main() {
                                 }
                             }
                             oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
-                            update_progress!("   {}Running gcc {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                            update_progress!("   {}Running gcc {}{}",LIGHT_BLUE(),oargs.join(" "),RESET());
                             let cmd = Command::new("gcc").args(oargs).spawn();
                             if cmd.is_err() {
-                                update_progress!("   {}Error: could not run gcc command{}\n",RED,RESET);
+                                update_progress!("   {}Error: could not run gcc command{}\n",RED(),RESET());
                                 exit(1);
                             }
                             let mut cmd = cmd.unwrap();
                             let status = cmd.wait();
                             if status.is_err() {
-                                update_progress!("   {}Error: could not recieve any information from gcc command{}\n",RED,RESET);
+                                update_progress!("   {}Error: could not recieve any information from gcc command{}\n",RED(),RESET());
                                 exit(1);
                             }
                             let ostatus = status.unwrap().code().unwrap_or(1);
                             if ostatus == 0 {
-                                update_progress!("   {}Finished{} built code with gcc successfully",GREEN,RESET);
+                                update_progress!("   {}Finished{} built code with gcc successfully",GREEN(),RESET());
                             }
                             else {
-                                update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
+                                update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED(),RESET(),ostatus);
                                 exit(ostatus)
                             }
                         }
@@ -1176,53 +1177,53 @@ fn main() {
                                 }
                             }
                             oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
-                            update_progress!("   {}Running ld {}{}",LIGHT_BLUE,oargs.join(" "),RESET);
+                            update_progress!("   {}Running ld {}{}",LIGHT_BLUE(),oargs.join(" "),RESET());
                             let cmd = Command::new("ld").args(oargs).spawn();
                             if cmd.is_err() {
-                                update_progress!("   {}Error: could not run ld command{}\n",RED,RESET);
+                                update_progress!("   {}Error: could not run ld command{}\n",RED(),RESET());
                                 exit(1);
                             }
                             let mut cmd = cmd.unwrap();
                             let status = cmd.wait();
                             if status.is_err() {
-                                update_progress!("   {}Error: could not recieve any information from ld command{}\n",RED,RESET);
+                                update_progress!("   {}Error: could not recieve any information from ld command{}\n",RED(),RESET());
                                 exit(1);
                             }
                             let ostatus = status.unwrap().code().unwrap_or(1);
                             if ostatus == 0 {
-                                update_progress!("   {}Finished{} built code with ld successfully",GREEN,RESET);
+                                update_progress!("   {}Finished{} built code with ld successfully",GREEN(),RESET());
                             }
                             else {
-                                update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED,RESET,ostatus);
+                                update_progress!("   {}Failed{} wasn't able to compile, gotten status code: {}\n",RED(),RESET(),ostatus);
                                 exit(ostatus)
                             }
                         }
                         _ => {
-                            update_progress!("   {}Failed Lighthouse does not support linker '{}'{}\n",RED,linker,RESET);
+                            update_progress!("   {}Failed Lighthouse does not support linker '{}'{}\n",RED(),linker,RESET());
                             exit(1)
                         }
                     }
-                    update_progress!("   {}Finished{} Compiled program sucessfully",GREEN,RESET);
+                    update_progress!("   {}Finished{} Compiled program sucessfully",GREEN(),RESET());
                     {
                         //println!("Args: {:?}",args);
                         let cmd = Command::new(obuf).args(args).stdout(Stdio::inherit()).stdin(Stdio::inherit()).stderr(Stdio::inherit()).spawn();
                         println!();
                         if cmd.is_err() {
-                            update_progress!("   {}Error: could not run program{}\n",RED,RESET);
+                            update_progress!("   {}Error: could not run program{}\n",RED(),RESET());
                             exit(1);
                         }
                         let mut cmd = cmd.unwrap();
                         let status = cmd.wait();
                         if status.is_err() {
-                            update_progress!("   {}Error: could not recieve any information from program{}\n",RED,RESET);
+                            update_progress!("   {}Error: could not recieve any information from program{}\n",RED(),RESET());
                             exit(1);
                         }
                         let ostatus = status.unwrap().code().unwrap_or(1);
                         if ostatus == 0 {
-                            println!("   {}Program exited with {}{}",GREEN,ostatus,RESET)
+                            println!("   {}Program exited with {}{}",GREEN(),ostatus,RESET())
                         }
                         else{
-                            println!("   {}Program exited with {}{}",RED,ostatus,RESET)
+                            println!("   {}Program exited with {}{}",RED(),ostatus,RESET())
                         }
                     }
                 }
@@ -1237,7 +1238,7 @@ fn main() {
             
         }
         "init" => {
-            update_progress!("   {}Checking for existing package{}",GREEN,RESET);
+            update_progress!("   {}Checking for existing package{}",GREEN(),RESET());
             let cdir = current_dir().unwrap_or_default();
             let cdirstr = cdir.to_str().unwrap_or_default().to_owned();
             let cdirname = cdir.file_name().unwrap_or(OsStr::new("SOPL")).to_str().unwrap_or_default().to_owned();
@@ -1293,20 +1294,20 @@ fn main() {
 
             
             if !can_create_package(cdirstr.clone()) {
-                update_progress!("    {}Error: cannot reinitialize a package! Package already exists{}\n",RED,RESET);
+                update_progress!("    {}Error: cannot reinitialize a package! Package already exists{}\n",RED(),RESET());
                 exit(1)
             }
 
-            update_progress!("   {}Creating src folder{}",LIGHT_BLUE,RESET);
+            update_progress!("   {}Creating src folder{}",LIGHT_BLUE(),RESET());
             let res = create_dir(cdirstr.clone()+"\\src");
             if res.is_err() {
-                update_progress!("   {}Could not create src folder{}\nReason: {}{}{}\n",RED,RESET,RED,res.unwrap_err().to_string(),RESET);
+                update_progress!("   {}Could not create src folder{}\nReason: {}{}{}\n",RED(),RESET(),RED(),res.unwrap_err().to_string(),RESET());
                 exit(1);
             }
-            update_progress!("   {}Creating lighthouse.cfg file{}",LIGHT_BLUE,RESET);
+            update_progress!("   {}Creating lighthouse.cfg file{}",LIGHT_BLUE(),RESET());
             let res = File::create(cdirstr.clone()+"\\lighthouse.cfg");
             if res.is_err() {
-                update_progress!("   {}Could not create lighthouse.cfg file{}",RED,RESET);
+                update_progress!("   {}Could not create lighthouse.cfg file{}",RED(),RESET());
                 exit(1);
             }
             let mut cfg_f = res.unwrap();
@@ -1324,13 +1325,13 @@ fn main() {
                 },
                 _ => {}
             }
-            update_progress!("   {}Working on .gitignore file{}",LIGHT_BLUE,RESET);
+            update_progress!("   {}Working on .gitignore file{}",LIGHT_BLUE(),RESET());
             {
                 let gitpath = PathBuf::from(cdirstr.clone()+"\\.gitignore");
                 let mut res = if gitpath.exists() {
                     let res = OpenOptions::new().append(true).open(gitpath);
                     if res.is_err() {
-                        update_progress!("   {}Could not open .gitignore file{}",RED,RESET);
+                        update_progress!("   {}Could not open .gitignore file{}",RED(),RESET());
                         exit(1);
                     }
                     res.unwrap()
@@ -1338,7 +1339,7 @@ fn main() {
                 else {
                     let res = File::create(cdirstr.clone()+"\\.gitignore");
                     if res.is_err() {
-                        update_progress!("   {}Could not create .gitignore file{}",RED,RESET);
+                        update_progress!("   {}Could not create .gitignore file{}",RED(),RESET());
                         exit(1);
                     }
                     res.unwrap()
@@ -1349,10 +1350,10 @@ fn main() {
             
             match options.package_type {
             PackageType::BIN => {
-                update_progress!("   {}Creating src\\main.spl file{}",LIGHT_BLUE,RESET);
+                update_progress!("   {}Creating src\\main.spl file{}",LIGHT_BLUE(),RESET());
                 let res = File::create(cdirstr.clone()+"\\src\\main.spl");
                 if res.is_err() {
-                    update_progress!("   {}Could not create main.spl file{}",RED,RESET);
+                    update_progress!("   {}Could not create main.spl file{}",RED(),RESET());
                     exit(1);
                 }
                 let mut mainspl_f = res.unwrap();
@@ -1362,10 +1363,10 @@ fn main() {
                 writeln!(&mut mainspl_f, "}}").unwrap();
             }
             PackageType::LIB => {
-                update_progress!("   {}Creating src\\lib.spl file{}",LIGHT_BLUE,RESET);
+                update_progress!("   {}Creating src\\lib.spl file{}",LIGHT_BLUE(),RESET());
                 let res = File::create(cdirstr.clone()+"\\src\\lib.spl");
                 if res.is_err() {
-                    update_progress!("   {}Could not create lib.spl file{}",RED,RESET);
+                    update_progress!("   {}Could not create lib.spl file{}",RED(),RESET());
                     exit(1);
                 }
                 let mut mainspl_f = res.unwrap();
@@ -1375,27 +1376,27 @@ fn main() {
                 writeln!(&mut mainspl_f, "}}").unwrap();
             }
             }
-            update_progress!("   {}Creating output folder{}",LIGHT_BLUE,RESET);
+            update_progress!("   {}Creating output folder{}",LIGHT_BLUE(),RESET());
             let res = create_dir(cdirstr.clone()+"\\output");
             if res.is_err() {
-                update_progress!("   {}Could not create output folder{}\nReason: {}{}{}\n",RED,RESET,RED,res.unwrap_err().to_string(),RESET);
+                update_progress!("   {}Could not create output folder{}\nReason: {}{}{}\n",RED(),RESET(),RED(),res.unwrap_err().to_string(),RESET());
                 exit(1);
             }
-            update_progress!("   {}Creating int folder{}",LIGHT_BLUE,RESET);
+            update_progress!("   {}Creating int folder{}",LIGHT_BLUE(),RESET());
             let res = create_dir(cdirstr.clone()+"\\output\\int");
             if res.is_err() {
-                update_progress!("   {}Could not create int folder{}\nReason: {}{}{}\n",RED,RESET,RED,res.unwrap_err().to_string(),RESET);
+                update_progress!("   {}Could not create int folder{}\nReason: {}{}{}\n",RED(),RESET(),RED(),res.unwrap_err().to_string(),RESET());
                 exit(1);
             }
-            update_progress!("   {}Creating bin folder{}",LIGHT_BLUE,RESET);
+            update_progress!("   {}Creating bin folder{}",LIGHT_BLUE(),RESET());
             let res = create_dir(cdirstr.clone()+"\\output\\bin");
             if res.is_err() {
-                update_progress!("   {}Could not create bin folder{}\nReason: {}{}{}\n",RED,RESET,RED,res.unwrap_err().to_string(),RESET);
+                update_progress!("   {}Could not create bin folder{}\nReason: {}{}{}\n",RED(),RESET(),RED(),res.unwrap_err().to_string(),RESET());
                 exit(1);
             }
              
-            update_progress!("   {}Initializing package{} \"{}\"",LIGHT_BLUE,RESET,options.package_name);
-            update_progress!("   {}Finished{} Initialized package \"{}\"",GREEN,RESET,options.package_name);
+            update_progress!("   {}Initializing package{} \"{}\"",LIGHT_BLUE(),RESET(),options.package_name);
+            update_progress!("   {}Finished{} Initialized package \"{}\"",GREEN(),RESET(),options.package_name);
         }
         _ => panic!("Unknown command: \"{}\"",command)
     }
