@@ -260,7 +260,7 @@ fn unescape(stri: &String) -> String {
     let mut out = String::new();
     let mut chars = stri.chars().into_iter();
     while let Some(chr) = chars.next(){
-        if chr == '\\' {
+        if chr == '/' {
             let nc = &chars.next();
             assert!(nc.is_some(),"Error: could not unescape string, invalid string escape symbol");
             let nc = nc.unwrap();
@@ -424,7 +424,7 @@ impl Iterator for CfgLexer {
                     if shouldIgnoreNext {
                         shouldIgnoreNext = false
                     }
-                    if c == '\\' {
+                    if c == '/' {
                         shouldIgnoreNext = true
                     }
                     outstr.push(c);
@@ -533,7 +533,17 @@ macro_rules! update_progress {
         std::io::stdout().flush().expect("Could not flush stdout");
     });
 }
-
+macro_rules! update_progress_expect {
+    ( $expector:expr,$($arg:tt)*) => {{
+        let message = format!($($arg)*);
+        let cover = " ".repeat(unsafe { LAST_MSG_LEN });
+        print!("\r{}",cover);
+        let res = $expector.expect(&format!("\r{}",message));
+        unsafe { LAST_MSG_LEN = message.len(); }
+        std::io::stdout().flush().expect("Could not flush stdout");
+        res
+    }};
+}
 
 static mut LAST_MSG_LEN: usize = 0;
 
@@ -560,20 +570,20 @@ impl PackageInfo {
 }
 fn can_create_package(dir: String) -> bool {
     let mut pinfo = PackageInfo::new();
-    pinfo.cfg = PathBuf::from(dir.clone()+"\\lighthouse.cfg");
-    pinfo.src_folder = PathBuf::from(dir.clone()+"\\src");
+    pinfo.cfg = PathBuf::from(dir.clone()+"/lighthouse.cfg");
+    pinfo.src_folder = PathBuf::from(dir.clone()+"/src");
     !pinfo.cfg.exists() && !pinfo.src_folder.exists()
 }
 fn verify_package_exists(dir: String) -> Result<PackageInfo, String> {
     let mut pinfo = PackageInfo::new();
-    pinfo.cfg = PathBuf::from(dir.clone()+"\\lighthouse.cfg");
+    pinfo.cfg = PathBuf::from(dir.clone()+"/lighthouse.cfg");
     if !pinfo.cfg.exists() {
         return Err("cfg does not exist".to_owned());
     }
     if !pinfo.cfg.is_file()  {
         return Err("cfg was not a file".to_owned());
     }
-    pinfo.src_folder = PathBuf::from(dir.clone()+"\\src");
+    pinfo.src_folder = PathBuf::from(dir.clone()+"/src");
     if !pinfo.src_folder.exists() {
         return Err("src folder does not exist".to_owned());
     }
@@ -732,7 +742,7 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
                 oargs.extend(vec!["-release".to_owned()])
             }
         }
-        oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
+        oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"/"+int_rep_str]);
         if arch.is_some() {
             if arch.unwrap() == "custom" {
                 let arch_path = com_expect!(lexer,build.vars.get("arch_path"),"Error: Expect arch_path with custom but found nothing!");
@@ -814,7 +824,7 @@ fn build_package(cdir: PathBuf) -> (CfgBuild,CfgLexer) {
                 let val = v_.file_stem().unwrap();
                 let int_rep = PathBuf::from(val).with_extension("asm");
                 let int_rep_str = int_rep.to_str().unwrap_or_default();
-                oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
+                oargs.extend(vec!["-o".to_owned(),intpath.typ.unwrap_string().clone()+"/"+int_rep_str]);
                 if arch.is_some() {
                     if arch.unwrap() == "custom" {
                         let arch_path = com_expect!(lexer,build.vars.get("arch_path"),"Error: Expect arch_path with custom but found nothing!");
@@ -1043,9 +1053,19 @@ fn main() {
                         if oarch_arch.is_none() {
                             update_progress!("   {}Failed{} Unknown architecture {}",RED(),oarch,RESET());
                         }
-                        oarch_arch.unwrap().clone()
+                        let mut oarch = oarch_arch.unwrap().clone();
+                        if let Some(flags) = build.vars.get("flags_gcc") {
+                            com_assert!(flags, flags.typ.is_array(), "Error: expected flags_gcc to be array but found other!");
+                            let flags_var_ar = flags.typ.unwrap_array();
+                            oarch.flags.gcc.extend(flags_var_ar.iter().map(
+                                    |v| {
+                                com_assert!(flags, v.is_string(), "Expected string in flags, found other");
+                                v.unwrap_string().clone()
+                            }));
+                        }
+                        oarch
                     };
-                    let out_obj_path = intpath.clone()+"\\main."+&arc.obj_extension;
+                    let out_obj_path = intpath.clone()+"/main."+&arc.obj_extension;
                     {
                         if let Some(build_files) = build.vars.get("build") {
                             com_assert!(build_files,build_files.typ.is_array(), "Error: Expected build to be an array but found something else");
@@ -1063,7 +1083,7 @@ fn main() {
                                 let asm_rep_str = asm_rep.to_str().unwrap_or_default();
                                 //let exe_rep = Path
                                 let mut oargs = arc.flags.nasm.clone();
-                                oargs.extend(vec![intpath.typ.unwrap_string().clone()+"\\"+asm_rep_str,"-o".to_owned(), intpath.typ.unwrap_string().clone()+"\\"+int_rep_str]);
+                                oargs.extend(vec![intpath.typ.unwrap_string().clone()+"/"+asm_rep_str,"-o".to_owned(), intpath.typ.unwrap_string().clone()+"/"+int_rep_str]);
                                 update_progress!("   {}Running nasm {}{}",LIGHT_BLUE(),oargs.join(" "),RESET());
                                 let cmd = Command::new("nasm").args(oargs).spawn();
                                 if cmd.is_err() {
@@ -1087,7 +1107,7 @@ fn main() {
                             }
                         }
                         let mut oargs = arc.flags.nasm.clone();
-                        oargs.extend(vec![intpath.clone()+"\\main.asm","-o".to_owned(), out_obj_path.clone()]);
+                        oargs.extend(vec![intpath.clone()+"/main.asm","-o".to_owned(), out_obj_path.clone()]);
                         update_progress!("   {}Running nasm {}{}",LIGHT_BLUE(),oargs.join(" "),RESET());
                         let cmd = Command::new("nasm").args(oargs).spawn();
                         if cmd.is_err() {
@@ -1109,7 +1129,7 @@ fn main() {
                             exit(ostatus)
                         }
                     }
-                    let obuf = binpath.clone()+"\\main."+&arc.exe_extension;
+                    let obuf = binpath.clone()+"/main."+&arc.exe_extension;
                     let linker = build.vars.get("linker");
                     let linker = if let Some(linker) = linker {
                         com_assert!(linker, linker.typ.is_string(), "Error: Expected linker type to be a string but found other!");
@@ -1132,7 +1152,7 @@ fn main() {
                                     let val = v_.file_stem().unwrap();
                                     let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
                                     let int_rep_str = int_rep.to_str().unwrap_or_default();
-                                    oargs.push(intpath.typ.unwrap_string().clone()+"\\"+int_rep_str);
+                                    oargs.push(intpath.typ.unwrap_string().clone()+"/"+int_rep_str);
                                 }
                             }
                             oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
@@ -1173,7 +1193,7 @@ fn main() {
                                     let val = v_.file_stem().unwrap();
                                     let int_rep = PathBuf::from(val).with_extension(&arc.obj_extension);
                                     let int_rep_str = int_rep.to_str().unwrap_or_default();
-                                    oargs.push(intpath.typ.unwrap_string().clone()+"\\"+int_rep_str);
+                                    oargs.push(intpath.typ.unwrap_string().clone()+"/"+int_rep_str);
                                 }
                             }
                             oargs.extend(vec![out_obj_path.clone(),"-o".to_owned(), obuf.clone()]);
@@ -1237,6 +1257,37 @@ fn main() {
             //Command::new("nasm").args(vec!["-f"])
             
         }
+        "lib" => {
+            update_progress!("   {}Verifying package{}",LIGHT_BLUE(),RESET());
+            let cdir = current_dir().unwrap_or_default();
+            let cdirstr = cdir.to_str().unwrap_or_default().to_owned();
+            let res = verify_package_exists(cdirstr);
+            if res.is_err() {
+                let err = res.unwrap_err();
+                update_progress!("   {}Error: Invalid package: {}{}",RED(),err,RESET());
+                exit(1);
+            }
+            update_progress!("   {}Package verified{}",GREEN(),RESET());
+            // let mut i: usize = 0;
+            // while i < args.len() {
+            //     match args[i].as_str() {
+            //         "add" => {
+            //             let res = update_progress_expect!(args.get(i+1), "   {}Expected type or path but found nothing{}",RED(),RESET());
+            //             match res {
+            //                 "local" => {
+
+            //                 }
+            //             }
+            //         }
+            //         _ => {
+            //             update_progress!("    {}Unknown flag {}{}",RED(),args[i],RESET());
+            //             exit(1);
+            //         }
+            //     }
+            //     i+=1;
+            // }
+            todo!("This")
+        }
         "init" => {
             update_progress!("   {}Checking for existing package{}",GREEN(),RESET());
             let cdir = current_dir().unwrap_or_default();
@@ -1299,13 +1350,13 @@ fn main() {
             }
 
             update_progress!("   {}Creating src folder{}",LIGHT_BLUE(),RESET());
-            let res = create_dir(cdirstr.clone()+"\\src");
+            let res = create_dir("./src");
             if res.is_err() {
                 update_progress!("   {}Could not create src folder{}\nReason: {}{}{}\n",RED(),RESET(),RED(),res.unwrap_err().to_string(),RESET());
                 exit(1);
             }
             update_progress!("   {}Creating lighthouse.cfg file{}",LIGHT_BLUE(),RESET());
-            let res = File::create(cdirstr.clone()+"\\lighthouse.cfg");
+            let res = File::create("./lighthouse.cfg");
             if res.is_err() {
                 update_progress!("   {}Could not create lighthouse.cfg file{}",RED(),RESET());
                 exit(1);
@@ -1313,11 +1364,11 @@ fn main() {
             let mut cfg_f = res.unwrap();
             writeln!(&mut cfg_f, "## Config supports comments :D").unwrap();
             writeln!(&mut cfg_f, "name=\"{}\"",options.package_name).unwrap();
-            writeln!(&mut cfg_f, "intpath=\"{}\"",cdirstr.clone()+"\\output\\int").unwrap();
-            writeln!(&mut cfg_f, "binpath=\"{}\"",cdirstr.clone()+"\\output\\bin").unwrap();
+            writeln!(&mut cfg_f, "intpath=\"{}\"","./output/int").unwrap();
+            writeln!(&mut cfg_f, "binpath=\"{}\"","./output/bin").unwrap();
             match options.package_type {
                 PackageType::BIN => {
-                    writeln!(&mut cfg_f, "entry=\"{}\"",cdirstr.clone()+"\\src\\main.spl").unwrap();
+                    writeln!(&mut cfg_f, "entry=\"{}\"","./src/main.spl").unwrap();
                     writeln!(&mut cfg_f, "type=\"bin\"").unwrap()
                 }
                 PackageType::LIB => {
@@ -1327,7 +1378,7 @@ fn main() {
             }
             update_progress!("   {}Working on .gitignore file{}",LIGHT_BLUE(),RESET());
             {
-                let gitpath = PathBuf::from(cdirstr.clone()+"\\.gitignore");
+                let gitpath = PathBuf::from(".gitignore");
                 let mut res = if gitpath.exists() {
                     let res = OpenOptions::new().append(true).open(gitpath);
                     if res.is_err() {
@@ -1337,7 +1388,7 @@ fn main() {
                     res.unwrap()
                 }
                 else {
-                    let res = File::create(cdirstr.clone()+"\\.gitignore");
+                    let res = File::create(".gitignore");
                     if res.is_err() {
                         update_progress!("   {}Could not create .gitignore file{}",RED(),RESET());
                         exit(1);
@@ -1350,8 +1401,8 @@ fn main() {
             
             match options.package_type {
             PackageType::BIN => {
-                update_progress!("   {}Creating src\\main.spl file{}",LIGHT_BLUE(),RESET());
-                let res = File::create(cdirstr.clone()+"\\src\\main.spl");
+                update_progress!("   {}Creating src/main.spl file{}",LIGHT_BLUE(),RESET());
+                let res = File::create("./src/main.spl");
                 if res.is_err() {
                     update_progress!("   {}Could not create main.spl file{}",RED(),RESET());
                     exit(1);
@@ -1363,8 +1414,8 @@ fn main() {
                 writeln!(&mut mainspl_f, "}}").unwrap();
             }
             PackageType::LIB => {
-                update_progress!("   {}Creating src\\lib.spl file{}",LIGHT_BLUE(),RESET());
-                let res = File::create(cdirstr.clone()+"\\src\\lib.spl");
+                update_progress!("   {}Creating src/lib.spl file{}",LIGHT_BLUE(),RESET());
+                let res = File::create("./src/lib.spl");
                 if res.is_err() {
                     update_progress!("   {}Could not create lib.spl file{}",RED(),RESET());
                     exit(1);
@@ -1377,19 +1428,19 @@ fn main() {
             }
             }
             update_progress!("   {}Creating output folder{}",LIGHT_BLUE(),RESET());
-            let res = create_dir(cdirstr.clone()+"\\output");
+            let res = create_dir("./output");
             if res.is_err() {
                 update_progress!("   {}Could not create output folder{}\nReason: {}{}{}\n",RED(),RESET(),RED(),res.unwrap_err().to_string(),RESET());
                 exit(1);
             }
             update_progress!("   {}Creating int folder{}",LIGHT_BLUE(),RESET());
-            let res = create_dir(cdirstr.clone()+"\\output\\int");
+            let res = create_dir("./output/int");
             if res.is_err() {
                 update_progress!("   {}Could not create int folder{}\nReason: {}{}{}\n",RED(),RESET(),RED(),res.unwrap_err().to_string(),RESET());
                 exit(1);
             }
             update_progress!("   {}Creating bin folder{}",LIGHT_BLUE(),RESET());
-            let res = create_dir(cdirstr.clone()+"\\output\\bin");
+            let res = create_dir("./output/bin");
             if res.is_err() {
                 update_progress!("   {}Could not create bin folder{}\nReason: {}{}{}\n",RED(),RESET(),RED(),res.unwrap_err().to_string(),RESET());
                 exit(1);
